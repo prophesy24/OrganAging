@@ -16,12 +16,17 @@ library(STRINGdb)
 library(igraph)
 library(tidyverse)
 library(shinybody)
-library(scales) 
+library(scales)
+library(htmlwidgets)
+library(circlize)
+library(RColorBrewer)
+library(ggalluvial)
+library(cowplot)
 
 # 将SXF血浆蛋白与marker做交集
 BIOMARKER <- read_excel("./01_data/BIOMARKER.xlsx")
 View(BIOMARKER)
-SXF_protein <- read_excel("../01_data/SXF protein.xlsx")
+SXF_protein <- read_excel("./01_data/SXF protein.xlsx")
 View(SXF_protein)
 BIOMARKER <- as.data.frame(BIOMARKER)
 SXF_protein <- as.data.frame(SXF_protein)
@@ -133,10 +138,10 @@ write.xlsx(overlap_aging_Plasma_secreted, file = "./result/All overlap.xlsx")
 # 获取HPA正常组织表达数据（含分泌蛋白信息）
 # 使用getHpa()函数获取分泌蛋白数据
 #组织数据
-hpa_tissue <- read.delim("./normal_ihc_data.tsv")
+hpa_tissue <- read.delim("./01_data/normal_ihc_data.tsv")
 
 # 分泌蛋白数据
-hpa_secretome <- read.delim("./proteinatlas.tsv") 
+hpa_secretome <- read.delim("./01_data/proteinatlas.tsv") 
 # 步骤2：读取数据
 hpa_secretome <- secretome
 # 验证列名
@@ -177,11 +182,11 @@ ggsave("HPA_Secretome_location_pie.pdf", width = 6, height = 6, dpi = 300)
 
 
 # Step 1: 读取你的基因列表（Gene_symbol + organ）
-gene_list <- read_excel("../01_data/The cross-organ aging network.xlsx")
+gene_list <- read_excel("./01_data/The cross-organ aging network.xlsx")
 View(gene_list)
 
 # Step 2: 加载 protein.aliases 文件，手动映射 Gene_symbol -> STRING ID
-aliases <- read.delim("../01_data/9606.protein.aliases.v11.5.txt.gz", header=TRUE, sep="\t", quote="", stringsAsFactors=FALSE)
+aliases <- read.delim("./01_data/9606.protein.aliases.v11.5.txt.gz", header=TRUE, sep="\t", quote="", stringsAsFactors=FALSE)
 
 # 过滤常用命名类型，选取最有代表性的映射
 aliases_filtered <- aliases %>% filter(source %in% c("Ensembl_HGNC", "Ensembl", "Gene_Name"))
@@ -189,7 +194,7 @@ gene_map <- merge(gene_list, aliases_filtered, by.x="Gene_symbol", by.y="alias")
 colnames(gene_map)[colnames(gene_map) == "stringId"] <- "STRING_id"
 
 # Step 3: 加载 protein.links 文件，提取我们需要的 PPI 关系
-links <- read.delim("../01_data/9606.protein.links.v11.5.txt.gz", header=TRUE, sep=" ")
+links <- read.delim("./01_data/9606.protein.links.v11.5.txt.gz", header=TRUE, sep=" ")
 
 # 只保留我们的输入基因之间的交互
 input_ids <- gene_map$X.string_protein_id
@@ -245,7 +250,8 @@ plot(
 
 # 中心性分析 ----
 # Degree (连接了多少其他器官)
-deg <- degree(organ_graph, mode = "all")
+deg <- igraph::degree(organ_graph, mode = "all")
+
 
 # Strength (总边权和 = 所有交互蛋白数)
 strength <- strength(organ_graph, mode = "all", weights = E(organ_graph)$interaction_count)
@@ -457,7 +463,6 @@ human(
 )
 
 # 将图像输出
-library(htmlwidgets)
 
 # 保存男性图
 p_male <- human(
@@ -586,9 +591,11 @@ organ_pair_ppi_named <- ppi_cross_organ %>%
 
 
 # 器官交互图 ----
-library(circlize)
-
 # 获取器官名称
+ppi_summary <- ppi_cross_organ %>%
+  count(organ_from, organ_to, name = "interaction_count") %>%
+  mutate(pair = paste0(pmin(organ_from, organ_to), "_", pmax(organ_from, organ_to)))
+
 organ_order <- unique(c(ppi_summary$organ_from, ppi_summary$organ_to))  # 或者用你自己整理好的器官顺序
 
 # 生成足够的 pastel 色
@@ -652,8 +659,6 @@ ggraph(tg, layout = "fr") +
   labs(title = "Hub Organ Network")
 
 # Organ 条形图
-library(ggplot2)
-
 # 假设 organ_centrality 已经包含 Organ 和 Strength 两列
 # 取 Top10 Hub 器官
 df_bar <- organ_centrality %>%
@@ -683,9 +688,6 @@ ggplot(df_bar, aes(x = reorder(Organ, Strength), y = Strength, fill = Strength))
   expand_limits(y = max(df_bar$Strength) * 1.1)
 
 # 径向条形图
-library(ggplot2)
-library(dplyr)
-
 # 仍然取 Top10，并计算角度与对齐方式
 df_radial <- df_bar %>%
   mutate(
@@ -718,7 +720,7 @@ ggplot(df_radial, aes(x = Organ, y = Strength, fill = Strength)) +
 
 # cell type解析 ----
 # 读取Enrichr结果（示例）
-enrichr_results <- read.delim("./rawdata/Human_Gene_Atlas_table.txt")
+enrichr_results <- read.delim("./01_data/Human_Gene_Atlas_table.txt")
 
 # 筛选显著条目（FDR < 0.05）
 significant_celltypes <- enrichr_results %>%
@@ -751,11 +753,10 @@ ggplot(significant_celltypes[1:12, ],
 overlap_aging_Plasma_secreted <- overlap_aging_Plasma_secreted %>%
   rename(Genes = 1)
 genes <- unique(overlap_aging_Plasma_secreted$Genes)
-library(dplyr)
 # cell type注释
 celltype_map <- hpa_tissue %>%
-  filter(`Gene name` %in% genes, Level %in% c("High", "Medium")) %>%
-  select(Gene = `Gene name`, Tissue, `Cell type`, Level) %>%
+  filter(`Gene.name` %in% genes, Level %in% c("High", "Medium")) %>%
+  select(Gene = `Gene.name`, Tissue, `Cell.type`, Level) %>%
   distinct()
 
 # secreted注释
@@ -770,17 +771,17 @@ gene_annotation <- celltype_map %>%
 
 # 准备环状图数据框
 circle_data <- gene_annotation %>%
-  count(`Cell type`, Secretome.location) %>%
-  filter(!is.na(Secretome.location), !is.na(`Cell type`))
+  count(`Cell.type`, Secretome.location) %>%
+  filter(!is.na(Secretome.location), !is.na(`Cell.type`))
 
 
 # 按 Cell type 计数
 celltype_count <- circle_data %>%
-  count(`Cell type`) %>%
+  count(`Cell.type`) %>%
   arrange(desc(n))
 
 # 绘图：横向条形图
-ggplot(celltype_count, aes(x = reorder(`Cell type`, n), y = n)) +
+ggplot(celltype_count, aes(x = reorder(`Cell.type`, n), y = n)) +
   geom_col(fill = "#4E79A7") +
   coord_flip() +
   labs(title = "All overlap protein Cell Type ",
@@ -794,7 +795,7 @@ celltype_count_top10 <- celltype_count %>%
   slice_max(n, n = 10)
 
 # 绘图
-ggplot(celltype_count_top10, aes(x = reorder(`Cell type`, n), y = n)) +
+ggplot(celltype_count_top10, aes(x = reorder(`Cell.type`, n), y = n)) +
   geom_col(fill = "#4E79A7") +
   coord_flip() +
   labs(title = "Top 10 Cell Types of Overlap Proteins",
@@ -810,15 +811,14 @@ ggsave("top10_overlap_protein_cell_type.pdf", width = 6, height = 9)
 
 
 # 分泌蛋白的celltype x secreted locataion关系的桑基图
-library(ggalluvial)
 # 创建冷色调色板（自定义或 RColorBrewer）
-n_colors <- length(unique(circle_data$`Cell type`))
+n_colors <- length(unique(circle_data$`Cell.type`))
 cool_colors <- colorRampPalette(brewer.pal(9, "BuGn"))(n_colors)
 
 # 绘图
 ggplot(circle_data,
-       aes(axis1 = `Cell type`, axis2 = Secretome.location)) +
-  geom_alluvium(aes(fill = `Cell type`), width = 0.12, alpha = 0.8) +
+       aes(axis1 = `Cell.type`, axis2 = Secretome.location)) +
+  geom_alluvium(aes(fill = `Cell.type`), width = 0.12, alpha = 0.8) +
   geom_stratum(width = 0.12, fill = "grey95", color = "grey50") +
   geom_text(stat = "stratum",
             aes(label = stringr::str_wrap(after_stat(stratum), width = 18)), 
@@ -842,8 +842,8 @@ ggsave("Cell Type & Secretome Association.pdf", width = 6, height = 18)
 # dot plot
 library(ggplot2)
 circle_data %>%
-  count(`Cell type`, Secretome.location) %>%
-  ggplot(aes(x = Secretome.location, y = `Cell type`, size = n)) +
+  count(`Cell.type`, Secretome.location) %>%
+  ggplot(aes(x = Secretome.location, y = `Cell.type`, size = n)) +
   geom_point(alpha = 0.8, color = "#1B9E77") +
   scale_size_continuous(name = "蛋白数量", range = c(2, 10)) +
   theme_classic(base_size = 13) +
@@ -885,7 +885,6 @@ ggplot(secretome_summary, aes(x = "", y = prop, fill = Secretome.location)) +
     legend.position = "right"
   )
 ggsave("Secretome Location distribution.pdf", width = 8, height = 6)
-library(dplyr)
 
 # 生成 Secretome.location 分布表格
 secretome_table <- circle_data %>%
@@ -901,20 +900,13 @@ secretome_table <- circle_data %>%
 print(secretome_table)
 
 # 映射多器官衰老共享marker----
-library(STRINGdb)
-library(igraph)
-library(tidyverse)
-
-library(readxl)
-library(igraph)
-library(tidyverse)
 
 # Step 1: 读取你的基因列表（Gene_symbol + organ）
-gene_list_shared <- read_excel("rawdata/shared marker.xlsx")
+gene_list_shared <- read_excel("./01_data/shared marker.xlsx")
 View(gene_list_shared)
 
 # Step 2: 加载 protein.aliases 文件，手动映射 Gene_symbol -> STRING ID
-aliases <- read.delim("./rawdata/9606.protein.aliases.v11.5.txt.gz", header=TRUE, sep="\t", quote="", stringsAsFactors=FALSE)
+aliases <- read.delim("./01_data/9606.protein.aliases.v11.5.txt.gz", header=TRUE, sep="\t", quote="", stringsAsFactors=FALSE)
 
 # 过滤常用命名类型，选取最有代表性的映射
 aliases_filtered <- aliases %>% filter(source %in% c("Ensembl_HGNC", "Ensembl", "Gene_Name"))
@@ -922,7 +914,7 @@ gene_map_shared <- merge(gene_list_shared, aliases_filtered, by.x="Gene_symbol",
 colnames(gene_map)[colnames(gene_map_shared) == "stringId"] <- "STRING_id"
 
 # Step 3: 加载 protein.links 文件，提取我们需要的 PPI 关系
-links <- read.delim("./rawdata/9606.protein.links.v11.5.txt.gz", header=TRUE, sep=" ")
+links <- read.delim("./01_data/9606.protein.links.v11.5.txt.gz", header=TRUE, sep=" ")
 
 # 只保留我们的输入基因之间的交互
 input_ids_shared <- gene_map_shared$X.string_protein_id
@@ -972,7 +964,7 @@ plot(
 
 # 中心性分析
 # Degree (连接了多少其他器官)
-deg_shared <- degree(organ_graph_shared, mode = "all")
+deg_shared <- igraph::degree(organ_graph_shared, mode = "all")
 
 # Strength (总边权和 = 所有交互蛋白数)
 strength_shared <- strength(organ_graph_shared, mode = "all", weights = E(organ_graph_shared)$interaction_count)
@@ -997,12 +989,6 @@ organ_centrality_shared <- data.frame(
 )
 
 # 再次绘图
-library(tidygraph)
-library(ggraph)
-library(ggplot2)
-library(RColorBrewer)
-library(tidygraph)
-
 # 添加中心性信息
 organ_graph_shared <- set_vertex_attr(organ_graph_shared, "Strength", value = strength_shared)
 
@@ -1019,7 +1005,7 @@ tg_shared <- tg_shared %>%
 # 开始绘图
 ggraph(tg_shared, layout = "fr") + 
   geom_edge_link(aes(width = interaction_count), color = "gray80", alpha = 0.7) +
-  geom_node_point(aes(size = Strength, color = strength_scaled)) +
+  geom_node_point(aes(size = Strength, color = strength_scaled_shared)) +
   geom_node_text(aes(label = label), repel = TRUE, size = 4, color = "black") +
   scale_color_gradientn(colors = brewer.pal(9, "YlOrRd")) +
   scale_size(range = c(5, 15)) +
@@ -1313,3 +1299,238 @@ run_enrichment_analysis(
   OrgDb = "Hs",
   dir = paste0(dir_result, "/shared_marker")
 )
+
+# AgingAtlas数据对比分析----
+tableExport_1 <- read_csv("~/project/OrganAging/01_data/tableExport.csv")
+tableExport_2 <- read_csv("~/project/OrganAging/01_data/tableExport (1).csv")
+tableExport_3 <- read_csv("~/project/OrganAging/01_data/tableExport (2).csv")
+tableExport_4 <- read_csv("~/project/OrganAging/01_data/tableExport (3).csv")
+tableExport_5 <- read_csv("~/project/OrganAging/01_data/tableExport (4).csv")
+tableExport_6 <- read_csv("~/project/OrganAging/01_data/tableExport (5).csv")
+
+AgingAtlas <- bind_rows(
+  tableExport_1, tableExport_2, tableExport_3,
+  tableExport_4, tableExport_5, tableExport_6
+)
+
+write.csv(AgingAtlas, file="./03_result/AgingAtlas.csv")
+
+# 与收集的biomarker取交集
+# 获取交集
+overlap_genes <- intersect(AgingAtlas$Symbol, BIOMARKER$Gene)
+
+# 查看前几项交集
+head(overlap_genes)
+
+# 获取两个集合
+set1 <- AgingAtlas$Symbol
+set2 <- BIOMARKER$Gene
+
+# 计算交集
+intersect_len <- length(intersect(set1, set2))
+
+# 创建 Venn 图
+venn.plot <- draw.pairwise.venn(
+  area1 = length(set1),
+  area2 = length(set2),
+  cross.area = intersect_len,
+  category = c("AgingAtlas", "OrganAging"),
+  fill = c("#657DAF", "#A7687D"),
+  alpha = 0.6,
+  cat.pos = c(0, 0), # 类别标签的位置
+  cat.dist = c(0.03, 0.03),
+  cat.cex = 1.2,
+  cex = 1.5,
+  fontface = "bold",
+  lty = "blank"
+)
+
+# 保存图像到文件
+pdf("./03_result/Venn_organ_vs_agingatlas.pdf", width = 6, height = 6)
+grid.draw(venn.plot)
+dev.off()
+
+
+gene_list <- AgingAtlas$Symbol
+dir_result <- "./"
+# 调用你的富集分析函数
+run_enrichment_analysis(
+  gene = gene_list,
+  OrgDb = "Hs",
+  dir = paste0(dir_result, "./03_result/AgingAtlas")
+)
+
+
+# 根据Gene_Set画饼状图
+# 统计每类的数量
+# 假设 AgingAtlas 数据框存在，且包含 Symbol 和 Gene_Set 两列
+# 1. 构造饼图数据
+gene_set_count <- AgingAtlas %>%
+  group_by(Gene_Set) %>%
+  summarise(Count = n()) %>%
+  mutate(Percentage = round(Count / sum(Count) * 100, 1),
+         Label = paste0(Gene_Set, ": ", Count, " (", Percentage, "%)"))
+
+# 颜色
+n_colors <- nrow(gene_set_count)
+fill_colors <- brewer.pal(min(12, max(3, n_colors)), "Set3")
+
+# 饼图
+p_pie <- ggplot(gene_set_count, aes(x = "", y = Count, fill = Gene_Set)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar("y") +
+  scale_fill_manual(values = fill_colors) +
+  theme_void() +
+  theme(legend.position = "none") +
+  labs(title = "Gene Set Composition in AgingAtlas") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 16))
+
+# 右侧图例注释：构造数据框
+legend_df <- gene_set_count %>%
+  arrange(desc(Count)) %>%
+  mutate(y = rev(seq_along(Gene_Set))*0.5)  # 垂直排序
+
+p_legend <- ggplot(legend_df) +
+  geom_point(aes(x = 1, y = y, color = Gene_Set), size = 5) +
+  geom_text(aes(x = 1.1, y = y, label = Label), hjust = 0, size = 6) +
+  scale_color_manual(values = fill_colors) +
+  theme_void() +
+  theme(legend.position = "none") +
+  xlim(1, 3)  # 留出注释空间
+
+# 组合图形：左饼图 + 右注释
+final_plot <- plot_grid(p_pie, p_legend, nrow = 1, rel_widths = c(1, 1.2))
+
+# 展示图形
+print(final_plot)
+ggsave("./04_figure/AgingAtlas_GeneSet_Pie_WithLegend.pdf", final_plot, width = 10, height = 6)
+
+
+# SenNet细胞衰老标志物数据库分析 ----
+SenNet <- read_excel("01_data/SenNet.xlsx")
+View(SenNet)
+
+# 与收集的biomarker取交集
+# 获取交集
+overlap_genes <- intersect(SenNet$Marker, BIOMARKER$Gene)
+
+# 查看前几项交集
+head(overlap_genes)
+
+# 获取两个集合
+set1 <- unique(SenNet$Marker)
+set2 <- BIOMARKER$Gene
+
+# 计算交集
+intersect_len <- length(intersect(set1, set2))
+
+# 创建 Venn 图
+venn.plot <- draw.pairwise.venn(
+  area1 = length(set1),
+  area2 = length(set2),
+  cross.area = intersect_len,
+  category = c("AgingAtlas", "OrganAging"),
+  fill = c("#657DAF", "#A7687D"),
+  alpha = 0.6,
+  cat.pos = c(0, 0), # 类别标签的位置
+  cat.dist = c(0.03, 0.03),
+  cat.cex = 1.2,
+  cex = 1.5,
+  fontface = "bold",
+  lty = "blank"
+)
+
+# 保存图像到文件
+pdf("./04_figure/Venn_organ_vs_SenNet.pdf", width = 6, height = 6)
+grid.draw(venn.plot)
+dev.off()
+
+
+gene_list <- SenNet$Marker
+dir_result <- "./"
+# 调用你的富集分析函数
+run_enrichment_analysis(
+  gene = gene_list,
+  OrgDb = "Hs",
+  dir = paste0(dir_result, "./03_result/SenNet")
+)
+
+# 统计画图
+# 主饼图的数据（按Tissue计数）
+# Tissue 频数
+tissue_count <- SenNet %>%
+  count(Tissue) %>%
+  mutate(Percent = n / sum(n) * 100,
+         Label = paste0(Tissue, ": ", n, " (", round(Percent, 1), "%)"))
+
+# 低饱和色板
+palette1 <- scales::hue_pal(l = 70, c = 40)(nrow(tissue_count))
+
+# 画饼图
+ggplot(tissue_count, aes(x = "", y = n, fill = Tissue)) +
+  geom_col(width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  scale_fill_manual(values = palette1) +
+  theme_void() +
+  theme(legend.position = "right") +
+  labs(title = "Tissue Composition in SenNet")
+
+# 各Tissue的Sensecence Hallmark的环状饼图
+# 统计每个 Tissue 中各个 Hallmark 的数量
+# 准备数据（假设你的数据叫 SenNet，列为 Tissue 和 Senescence_Hallmark）
+hallmark_count <- SenNet %>%
+  count(Tissue, Senescence_Hallmark, name = "Count") %>%
+  group_by(Tissue) %>%
+  mutate(Percent = Count / sum(Count)) %>%
+  ungroup()
+
+# 把 NA 转为因子标签
+hallmark_count$Senescence_Hallmark <- fct_na_value_to_level(hallmark_count$Senescence_Hallmark, level = "Unknown")
+
+
+# 调色板（低饱和度）
+palette2 <- c(
+  "Cell cycle arrest" = "#cba39b",
+  "Cell surface markers" = "#e6c3b3",
+  "Changes in morphology" = "#c8d1b6",
+  "DNA damage" = "#d8b4a6",
+  "DNA damage response" = "#c9dad4",
+  "Increased lysosomal content" = "#abc4b3",
+  "Metabolic adaptations" = "#dad0aa",
+  "Nuclear changes" = "#b9c3d2",
+  "Nuclear reorganization" = "#c9ced6",
+  "Other" = "#e5d4c0",
+  "SASP" = "#b295c5",
+  "Upregulation of anti-apoptotic pathways" = "#dec0d4",
+  "Unknown" = "#d9d9d9"  # 为 NA 设置颜色
+)
+
+# 绘图
+hallmark_plot <- ggplot(hallmark_count) +
+  geom_arc_bar(
+    aes(
+      x0 = 0, y0 = 0, r0 = 0.5, r = 1,
+      amount = Percent,
+      fill = Senescence_Hallmark
+    ),
+    stat = "pie",
+    alpha = 0.9,
+    color = "white"
+  ) +
+  coord_fixed() +
+  facet_wrap(~ Tissue, ncol = 4) +
+  theme(
+    strip.text = element_text(size = 12, face = "bold"),
+    panel.spacing = unit(1, "lines")  # ← 这里加大间隔
+  )+
+  scale_fill_manual(values = palette2) +
+  theme_void(base_size = 14) +
+  theme(
+    strip.text = element_text(face = "bold", size = 12),
+    legend.position = "right",
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16)
+  ) +
+  labs(title = "Senescence Hallmarks in Each Tissue", fill = "Senescence_Hallmark")
+
+print(hallmark_plot)
+ggsave("./04_figure/Tissue_Senescence_Hallmark_Donuts.pdf", hallmark_plot, width = 12, height = 8)
