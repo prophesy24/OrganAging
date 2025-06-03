@@ -1,41 +1,70 @@
+# R包配置 ----
+library(ggVennDiagram)
+library(ggplot2)
 library(readxl)
-BIOMARKER <- read_excel("rawdata/BIOMARKER.xlsx")
+library(VennDiagram)
+library(dplyr)
+library(tidyr)
+library(ggalluvial)  # 桑基图/冲击图绘制
+library(networkD3)
+library(readr)
+library(tibble)  # 提供column_to_rownames()
+library(pheatmap)
+library(ggraph)
+library(tidygraph)
+library(STRINGdb)
+library(igraph)
+library(tidyverse)
+library(shinybody)
+library(scales) 
+
+# 将SXF血浆蛋白与marker做交集
+BIOMARKER <- read_excel("./01_data/BIOMARKER.xlsx")
 View(BIOMARKER)
-SXF_protein <- read_excel("rawdata/SXF protein.xlsx")
+SXF_protein <- read_excel("../01_data/SXF protein.xlsx")
 View(SXF_protein)
 BIOMARKER <- as.data.frame(BIOMARKER)
 SXF_protein <- as.data.frame(SXF_protein)
 
 # 提取基因列表并去重
-organ_aging <- unique(BIOMARKER$Genes)
-SXF_protein <- unique(SXF_protein$Genes)
+organ_aging <- unique(BIOMARKER$Gene)
+SXF_protein <- unique(SXF_protein$Gene)
 
 # 获取共有基因
 common_genes <- intersect(organ_aging, SXF_protein)
 print(common_genes)
 
 common_genes <- as.data.frame(common_genes)
-# 安装并加载包
-install.packages("ggVennDiagram")
-library(ggVennDiagram)
-library(ggplot2)
-# 生成Venn图
-ggVennDiagram(
-  list(Dataset1 = organ_aging, Dataset2 = SXF_protein),
-  category.names = c("Organ aging biomarker", "Plasma protein"),
-  set_color = "black",
-  set_size = 5,
-  label_color = "firebrick",
-  edge_size = 1
-) +
-  labs(title = "Gene Overlap Analysis") +
-  theme(
-    plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
-    panel.background = element_rect(fill = "white")
-  ) +
-  scale_fill_distiller(palette = "RdYlBu")
 
-ggsave("ggVenn.png", width = 6, height = 6, dpi = 300)
+# Venn图 
+
+# 获取两个集合
+set1 <- organ_aging
+set2 <- SXF_protein
+
+# 计算交集
+intersect_len <- length(intersect(set1, set2))
+
+# 创建 Venn 图
+venn.plot <- draw.pairwise.venn(
+  area1 = length(set1),
+  area2 = length(set2),
+  cross.area = intersect_len,
+  category = c("Organ aging biomarker", "Plasma protein"),
+  fill = c("#657DAF", "#A7687D"),
+  alpha = 0.6,
+  cat.pos = c(0, 0), # 类别标签的位置
+  cat.dist = c(0.03, 0.03),
+  cat.cex = 1.2,
+  cex = 1.5,
+  fontface = "bold",
+  lty = "blank"
+)
+
+# 保存图像到文件
+pdf("Venn_organ_vs_plasma.pdf", width = 6, height = 6)
+grid.draw(venn.plot)
+dev.off()
 
 # 输出共有基因
 write.csv(data.frame(Common_Genes = common_genes), 
@@ -46,11 +75,7 @@ write.csv(data.frame(Common_Genes = common_genes),
 
 library(hpar)
 # 获取HPA所有蛋白质分类数据（含分泌蛋白标记）
-secretome <- read.table("./rawdata/sa_location_Secreted.tsv", header=TRUE, sep="\t")
-
-# 加载包
-library(dplyr)
-
+secretome <- read.table("./01_data/sa_location_Secreted.tsv", header=TRUE, sep="\t")
 
 
 # 取交集：筛选你的标志物中属于分泌蛋白的基因
@@ -64,263 +89,99 @@ cat(sprintf("你的标志物中有%d个分泌蛋白（占比%.1f%%）",
             nrow(overlap_genes),
             nrow(overlap_genes)/nrow(BIOMARKER)*100))
 
-library(ggplot2)
-
-# 绘制分泌蛋白占比饼图
-# 优化后的饼图
-ggplot(df, aes(x = "", y = Count, fill = Category)) +
-  +     geom_bar(stat = "identity", width = 1, color = "white", linewidth = 0.5) +  # 添加白色边框
-  +     coord_polar("y", start = 0) +
-  +     geom_text(aes(label = Label), 
-                  +               position = position_stack(vjust = 0.5),  # 标签居中
-                  +               color = "white",  # 标签文字颜色
-                  +               size = 5,         # 标签字号
-                  +               fontface = "bold") + 
-  +     scale_fill_manual(values = my_colors) +  # 应用自定义颜色
-  +     labs(title = "Secretome Biomarkers in Organ aging Signature",
-             +          subtitle = paste("Total biomarkers:", nrow(BIOMARKER)),
-             +          fill = "Protein Category") +
-  +     theme_void() +
-  +     theme(
-    +         plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),  # 标题居中加粗
-    +         plot.subtitle = element_text(hjust = 0.5, size = 10),  # 副标题
-    +         legend.position = "bottom",  # 图例位置
-    +         legend.title = element_text(face = "bold")  # 图例标题加粗
-    +     )
 
 common_genes$group <- "plasma aging marker"
 overlap_genes$group <- "secreted aging marker"
 
-# combined
-venn_pre <- rbind(common_genes,overlap_genes)
-
-# res output
-write.xlsx(venn_pre, file = "./result/plasma&secreted.xlsx")
 
 secreted <- secretome$Gene
-# 分泌蛋白和marker进行overlap
-organ_aging <- as.data.frame(organ_aging)
-secreted <- as.data.frame(secreted)
-colnames(secreted) <- c("Gene")
-colnames(organ_aging) <- c("Gene")
-organ_aging$group <- "Organ aging marker"
-secreted$group <- "Secreted marker"
+
 
 # combined
-venn_pre <- rbind(organ_aging,secreted)
-overlap_aging_secreted <- intersect(organ_aging$Gene, secreted$Gene)
-length(overlap_aging_secreted)
-# res output
-write.xlsx(venn_pre, file = "./result/organ aging&secreted.xlsx")
-
-# 血浆蛋白和marker进行overlap
-SXF_protein <- as.data.frame(SXF_protein)
-colnames(SXF_protein) <- c("Gene")
-SXF_protein$group <- "Plasma protein"
-# combined
-venn_pre <- rbind(organ_aging,SXF_protein)
-overlap_aging_Plasma <- intersect(organ_aging$Gene, SXF_protein$Gene)
-length(overlap_aging_Plasma)
-
-# res output
-write.xlsx(venn_pre, file = "./result/organ aging&plasma.xlsx")
-
 # 将全部overlap
 # combined
-venn_pre <- rbind(organ_aging,SXF_protein,secreted)
-overlap_aging_Plasma_secreted <- intersect(overlap_aging_Plasma, overlap_aging_secreted)
+venn_genes <- unique(c(organ_aging, SXF_protein, secreted))
+venn.plot <- draw.triple.venn(
+  area1 = length(organ_aging),
+  area2 = length(SXF_protein),
+  area3 = length(secreted),
+  n12 = length(intersect(organ_aging, SXF_protein)),
+  n23 = length(intersect(SXF_protein, secreted)),
+  n13 = length(intersect(organ_aging, secreted)),
+  n123 = length(Reduce(intersect, list(organ_aging, SXF_protein, secreted))),
+  category = c("Organ Aging", "Plasma Protein", "Secreted"),
+  fill = c("#FC8D62", "#8DA0CB", "#66C2A5"),
+  alpha = 0.6,
+  lty = "blank",
+  cat.cex = 1.2,
+  cex = 1.5
+)
+# 保存为 PDF
+pdf("Triple_Venn.pdf", width = 7, height = 7)
+grid.draw(venn.plot)
+dev.off()
+
+All_overlap_genes <- Reduce(intersect, list(organ_aging, SXF_protein, secreted))
+overlap_aging_Plasma_secreted <- All_overlap_genes
 # res output
 overlap_aging_Plasma_secreted <- data.frame(overlap_aging_Plasma_secreted)
-colnames(overlap_aging_Plasma_secreted) <- overlap_aging_Plasma_secreted$id
 write.xlsx(overlap_aging_Plasma_secreted, file = "./result/All overlap.xlsx")
 
 #将基因映射到器官 ----
 # 安装并加载hpar包
-if (!require("hpar")) BiocManager::install("hpar")
-library(hpar)
-#allHparData()
-#Title
-#1          hpaCancer16.1
-#2              hpaCancer
-#3    hpaNormalTissue16.1
-#4        hpaNormalTissue
-#5           hpaSecretome
-#6    hpaSubcellularLoc14
-#7  hpaSubcellularLoc16.1
-#8      hpaSubcellularLoc
-#9     rnaConsensusTissue
-#10       rnaFantomTissue
-#11   rnaGeneCellLine16.1
-#12       rnaGeneCellLine
-#13     rnaGeneTissue21.0
-#14         rnaGtexTissue
-#15          rnaHpaTissue
+
 # 获取HPA正常组织表达数据（含分泌蛋白信息）
 # 使用getHpa()函数获取分泌蛋白数据
 #组织数据
-download.file("https://www.proteinatlas.org/download/normal_tissue.tsv.zip", "tissue.zip")
-unzip("tissue.zip")
-hpa_tissue <- read.delim("normal_tissue.tsv")
+hpa_tissue <- read.delim("./normal_ihc_data.tsv")
 
 # 分泌蛋白数据
-download.file("https://www.proteinatlas.org/download/proteinatlas.tsv.zip", "secretome.zip")
-unzip("secretome.zip")
-hpa_secretome <- read.delim("proteinatlas.tsv") %>%
-  filter(Secretory == "yes")
+hpa_secretome <- read.delim("./proteinatlas.tsv") 
 # 步骤2：读取数据
-library(readr)
-hpa_tissue <- read_tsv("normal_ihc_data.tsv")
 hpa_secretome <- secretome
 # 验证列名
 colnames(hpa_tissue)      # 应包含 Gene, Tissue, Cell.type, Level
 colnames(hpa_secretome)   # 应包含 Gene, Secretory.score
-
-library(ggplot2)
-library(tibble)  # 提供column_to_rownames()
-library(dplyr)   # 提供数据操作
 
 # 统计不同分泌定位的蛋白数量
 location_count <- hpa_secretome %>%
   filter(!is.na(Secretome.location)) %>%
   count(Secretome.location) %>%
   arrange(desc(n))
+location_count$percent <- round(location_count$n / sum(location_count$n) * 100, 1)
+location_count$label <- paste0(location_count$Secretome.location, "\n", location_count$percent, "%")
+# HPA数据中分泌蛋白的定位
+ggplot(location_count, aes(x = "", y = n, fill = Secretome.location)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar("y", start = 0) +
+  labs(title = "分泌蛋白的亚定位分布（饼图）", fill = "分泌定位") +
+  theme_void() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.title = element_text(face = "bold"),
+    legend.position = "right"
+  ) +
+  scale_fill_brewer(palette = "Set3")
 
-# 绘制柱状图
-ggplot(location_count, aes(x = reorder(Secretome.location, n), y = n)) +
-  geom_col(fill = "#4E79A7") +
-  labs(title = "分泌蛋白的亚定位分布", 
-       x = "分泌定位", 
-       y = "蛋白数量") +
-  coord_flip() +  # 横向显示
-  theme_minimal()
+ggsave("HPA_Secretome_location_pie.pdf", width = 6, height = 6, dpi = 300)
 
-library(pheatmap)
 
-# 准备数据：筛选高表达分泌蛋白的组织分布
-heatmap_data <- hpa_tissue %>%
-  filter(`Gene name` %in% secreted_genes & Level %in% c("High", "Medium")) %>%
-  count(`Gene name`, Tissue) %>%
-  tidyr::pivot_wider(names_from = Tissue, values_from = n, values_fill = 0) %>%
-  column_to_rownames("Gene name")
-
-# 绘制热图
-pheatmap(heatmap_data, 
-         color = colorRampPalette(c("white", "#E15759"))(100),
-         main = "分泌蛋白的组织分布热图",
-         cluster_rows = TRUE,
-         cluster_cols = TRUE)
-
-library(ggraph)
-library(tidygraph)
-
-# 构建边数据
-edges <- hpa_tissue %>%
-  filter(`Gene name` %in% secreted_genes & Level %in% c("High", "Medium")) %>%
-  select(from = `Gene name`, to = Tissue)
-
-# 创建网络图
-graph <- as_tbl_graph(edges) %>%
-  mutate(degree = centrality_degree())
-
-# 绘制网络
-set.seed(123)
-ggraph(graph, layout = "fr") + 
-  geom_edge_link(alpha = 0.2) +
-  geom_node_point(aes(size = degree, color = ifelse(name %in% secreted_genes, "Gene", "Tissue"))) +
-  geom_node_text(aes(label = ifelse(degree > 10, name, "")), repel = TRUE) +
-  scale_color_manual(values = c("#4E79A7", "#F28E2B")) +
-  labs(title = "分泌蛋白-器官关联网络") +
-  theme_graph()
 
 # 将我的数据映射到器官 ----
-# 加载必要的包
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-library(ggalluvial)  # 桑基图/冲击图绘制
-library(networkD3)   # 交互式桑基图
 
 # 从HPA加载组织表达数据（若已有hpa_tissue数据框则跳过）
-data(hpaNormalTissue)  # 使用hpar包内置数据
-# 或从文件读取：
-# hpa_tissue <- read.delim("normal_tissue.tsv")
-
-# 筛选高/中表达水平的记录
-hpa_filtered <- hpa_tissue %>%
-  filter(Level %in% c("High", "Medium"))
-hpa_filtered$ENS <- hpa_filtered$Gene
-hpa_filtered <- subset(hpa_filtered,select = -c(Gene))
-hpa_filtered$Gene <- hpa_filtered$`Gene name`
-
-# 映射基因到器官
-gene_organ_mapping <- overlap_genes %>%
-  left_join(hpa_filtered, by = "Gene") %>%
-  filter(!is.na(Tissue)) %>%  # 移除无组织信息的基因
-  distinct(Gene, group, Tissue)  # 去重
-
-# 计算基因-器官-分组的频数
-sankey_data <- gene_organ_mapping %>%
-  count(group, Tissue, name = "Count")
-
-# 绘制静态桑基图
-ggplot(sankey_data,
-       aes(axis1 = group,   # 第一层：分组
-           axis2 = Tissue,  # 第二层：器官
-           y = Count)) +
-  geom_alluvium(aes(fill = group), width = 1/12) +  # 流动带
-  geom_stratum(width = 1/12, fill = "grey80", color = "grey") +  # 分层块
-  geom_text(stat = "stratum", aes(label = after_stat(stratum)), size = 3) +  # 标签
-  scale_x_discrete(limits = c("Group", "Tissue"), expand = c(0.05, 0.05)) +
-  labs(title = "分泌蛋白分组-器官分布") +
-  theme_minimal() +
-  theme(legend.position = "bottom")
-
-# 方法2准备节点列表
-nodes <- data.frame(
-  name = c(unique(sankey_data$group), unique(sankey_data$Tissue)),
-  group = c(rep("Group", n_distinct(sankey_data$group)), 
-            rep("Tissue", n_distinct(sankey_data$Tissue)))
-)
-
-# 准备连接数据
-links <- sankey_data %>%
-  mutate(
-    source = match(group, nodes$name) - 1,  # 从0开始索引
-    target = match(Tissue, nodes$name) - 1,
-    value = Count
-  )
-
-#  绘制交互式桑基图
-sankeyNetwork(
-  Links = links,
-  Nodes = nodes,
-  Source = "source",
-  Target = "target",
-  Value = "value",
-  NodeID = "name",
-  NodeGroup = "group",
-  units = "genes",
-  fontSize = 12,
-  nodeWidth = 30
-)
 
 # 跨器官衰老网络分析 ----
 # 安装和加载必要包
 
-library(STRINGdb)
-library(igraph)
-library(tidyverse)
 
-library(readxl)
-library(igraph)
-library(tidyverse)
 
 # Step 1: 读取你的基因列表（Gene_symbol + organ）
-gene_list <- read_excel("rawdata/The cross-organ aging network.xlsx")
+gene_list <- read_excel("../01_data/The cross-organ aging network.xlsx")
 View(gene_list)
 
 # Step 2: 加载 protein.aliases 文件，手动映射 Gene_symbol -> STRING ID
-aliases <- read.delim("./rawdata/9606.protein.aliases.v11.5.txt.gz", header=TRUE, sep="\t", quote="", stringsAsFactors=FALSE)
+aliases <- read.delim("../01_data/9606.protein.aliases.v11.5.txt.gz", header=TRUE, sep="\t", quote="", stringsAsFactors=FALSE)
 
 # 过滤常用命名类型，选取最有代表性的映射
 aliases_filtered <- aliases %>% filter(source %in% c("Ensembl_HGNC", "Ensembl", "Gene_Name"))
@@ -328,7 +189,7 @@ gene_map <- merge(gene_list, aliases_filtered, by.x="Gene_symbol", by.y="alias")
 colnames(gene_map)[colnames(gene_map) == "stringId"] <- "STRING_id"
 
 # Step 3: 加载 protein.links 文件，提取我们需要的 PPI 关系
-links <- read.delim("./rawdata/9606.protein.links.v11.5.txt.gz", header=TRUE, sep=" ")
+links <- read.delim("../01_data/9606.protein.links.v11.5.txt.gz", header=TRUE, sep=" ")
 
 # 只保留我们的输入基因之间的交互
 input_ids <- gene_map$X.string_protein_id
@@ -362,6 +223,12 @@ plot(
   edge.width = E(organ_graph)$interaction_count / max(E(organ_graph)$interaction_count) * 10,
   main = "Organ-to-Organ Interaction Network via PPI"
 )
+
+# 计算每个节点的 strength（即加权度）
+strengths <- strength(organ_graph, weights = E(organ_graph)$interaction_count)
+
+# 对 strength 进行缩放，映射为合适的节点大小（比如 10~40）
+scaled_strength <- scales::rescale(strengths, to = c(10, 40))
 
 set.seed(123)
 plot(
@@ -412,11 +279,6 @@ write.csv(organ_centrality, file = "./Hub organ rank.csv")
 
 
 # 再次绘图
-library(tidygraph)
-library(ggraph)
-library(ggplot2)
-library(RColorBrewer)
-library(tidygraph)
 
 # 添加中心性信息
 organ_graph <- set_vertex_attr(organ_graph, "Strength", value = strength)
@@ -473,10 +335,6 @@ ggraph(tg, layout = "fr") +
 library(gganatogram)
 data("hgMale_key", package="gganatogram") # 加载解剖模板&#8203;:contentReference[oaicite:1]{index=1}
 
-library(dplyr)
-library(ggplot2)
-library(scales)  # 用于rescale函数
-
 organ_centrality <- organ_centrality %>%
   mutate(strength_scaled = rescale(Strength))
 
@@ -526,7 +384,6 @@ anat_data <- hgMale_key %>%
 
 
 # 绘图
-library(gganatogram)
 gganatogram(data = anat_data,
             fill = "value",
             organism = "human",
@@ -553,7 +410,7 @@ organ_data_male <- data.frame(
                 "Gingiva", "Bladder", "Skin", "Artery", "Breast", "Spleen", "Plasma")
 )
 
-library(shinybody)
+
 
 # 为每个器官分配颜色
 organ_data_male$color <- scales::col_numeric(
@@ -582,7 +439,6 @@ organ_data_female <- data.frame(
                 "Gingiva", "Bladder", "Skin", "Artery", "Breast", "Spleen", "Plasma")
 )
 
-library(shinybody)
 
 # 为每个器官分配颜色
 organ_data_female$color <- scales::col_numeric(
@@ -625,7 +481,6 @@ saveWidget(p_female, "female_ppi.html", selfcontained = TRUE)
 
 
 --------------
-  library(shinybody)
 
 # 自定义器官颜色映射函数
 
