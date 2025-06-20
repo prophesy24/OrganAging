@@ -78,7 +78,6 @@ write.csv(data.frame(Common_Genes = common_genes),
 
 # 与HPA的分泌蛋白overlap ----
 
-library(hpar)
 # 获取HPA所有蛋白质分类数据（含分泌蛋白标记）
 secretome <- read.table("./01_data/sa_location_Secreted.tsv", header=TRUE, sep="\t")
 
@@ -1534,3 +1533,8 @@ hallmark_plot <- ggplot(hallmark_count) +
 
 print(hallmark_plot)
 ggsave("./04_figure/Tissue_Senescence_Hallmark_Donuts.pdf", hallmark_plot, width = 12, height = 8)
+
+# Undulating changes in human plasma proteome profiles across the lifespan 文章人、鼠血浆蛋白质组数据分析----
+library(readxl)
+Human_plasma_proteome <- read_excel("01_data/Human_plasma_proteome.xlsx")
+View(Human_plasma_proteome)
